@@ -49,6 +49,10 @@ locations_col = db["locations"]
 guest_state_col = db["guest_state"]
 device_locations_col = db["device_locations"]
 push_tokens_col = db["push_tokens"]
+# Isolated store for dashboard bundles: append-only rows for history + reuse within TTL.
+weather_data_col = db["weather_data"]
+
+WEATHER_DATA_TTL_SEC = int(os.environ.get("WEATHER_DATA_TTL_SEC", os.environ.get("WEATHER_CACHE_TTL_SEC", "600")))
 
 # --------------------------------------------------------------------------- app
 app = FastAPI(title="Root Record Weather Manager API", version="1.0.0")
@@ -419,6 +423,137 @@ async def _nws_fetch(client_: httpx.AsyncClient, url: str) -> dict:
     return r.json()
 
 
+def _nws_quant_value(node: Any) -> Optional[float]:
+    """NWS GeoJSON often uses { unitCode, value } quantitative nodes; value may be null."""
+    if node is None:
+        return None
+    if isinstance(node, (int, float)):
+        if isinstance(node, float) and (math.isnan(node) or math.isinf(node)):
+            return None
+        return float(node)
+    if isinstance(node, dict):
+        v = node.get("value")
+        if v is None:
+            return None
+        try:
+            out = float(v)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(out) or math.isinf(out):
+            return None
+        return out
+    return None
+
+
+def _observation_metric_score(props: dict) -> int:
+    """How many primary 'now' metrics the station observation provides."""
+    keys = ("temperature", "relativeHumidity", "windSpeed", "barometricPressure")
+    return sum(1 for k in keys if _nws_quant_value((props or {}).get(k)) is not None)
+
+
+def _parse_hourly_wind_speed_to_kmh(raw: Any) -> Optional[float]:
+    """Hourly gridpoint forecast exposes windSpeed as a string like '7 mph' or '15 km/h'."""
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        try:
+            n = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(n) or math.isinf(n):
+            return None
+        return n
+    text = str(raw).strip().lower()
+    if not text:
+        return None
+    nums = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", text)]
+    if not nums:
+        return None
+    n = max(nums)
+    if "km/h" in text or "kmh" in text:
+        return n
+    if "knot" in text or " kt" in text or text.endswith("kt"):
+        return n * 1.852
+    if "m/s" in text or "mps" in text:
+        return n * 3.6
+    if "mph" in text:
+        return n * 1.60934
+    # NWS US hourly is typically mph even when the token is omitted
+    return n * 1.60934
+
+
+def _merge_hourly_into_observation(observation: dict, hourly: dict) -> dict:
+    """Fill missing station metrics from the first hourly period (different field shapes)."""
+    out = dict(observation or {})
+    if not hourly:
+        return out
+    if _nws_quant_value(out.get("relativeHumidity")) is None:
+        rh = hourly.get("relativeHumidity")
+        if isinstance(rh, dict) and rh.get("value") is not None:
+            out["relativeHumidity"] = {
+                "unitCode": rh.get("unitCode") or "wmoUnit:percent",
+                "value": float(rh["value"]),
+            }
+    if _nws_quant_value(out.get("windSpeed")) is None:
+        kmh = _parse_hourly_wind_speed_to_kmh(hourly.get("windSpeed"))
+        if kmh is not None:
+            out["windSpeed"] = {"unitCode": "wmoUnit:km_h-1", "value": kmh}
+    if _nws_quant_value(out.get("windDirection")) is None:
+        wd = hourly.get("windDirection")
+        if isinstance(wd, str) and wd.strip():
+            out["windDirectionCardinal"] = wd.strip()
+    if _nws_quant_value(out.get("temperature")) is None and hourly.get("temperature") is not None:
+        try:
+            t = float(hourly["temperature"])
+        except (TypeError, ValueError):
+            t = None
+        if t is not None:
+            unit = hourly.get("temperatureUnit") or "F"
+            if unit == "F":
+                t = (t - 32.0) * 5.0 / 9.0
+            out["temperature"] = {"unitCode": "wmoUnit:degC", "value": t}
+    return out
+
+
+async def _best_observation_from_stations(
+    hc: httpx.AsyncClient, features: List[dict], max_stations: int = 8
+) -> dict:
+    """Try several nearby stations; NWS lists them in rough priority order."""
+    best: dict = {}
+    best_score = -1
+    for feat in (features or [])[:max_stations]:
+        sid = (feat.get("properties") or {}).get("stationIdentifier")
+        if not sid:
+            continue
+        try:
+            obs = await _nws_fetch(hc, f"https://api.weather.gov/stations/{sid}/observations/latest")
+            props = (obs or {}).get("properties") or {}
+            score = _observation_metric_score(props)
+            if score > best_score:
+                best_score = score
+                best = props
+            if score >= 4:
+                break
+        except Exception as e:  # noqa: BLE001
+            logger.info("station %s observation failed: %s", sid, e)
+            continue
+    return best
+
+
+def _weather_grid_key(lat: float, lon: float) -> str:
+    return f"{round(lat, 3)},{round(lon, 3)}"
+
+
+def _iso_age_seconds(iso_ts: Optional[str]) -> Optional[float]:
+    if not iso_ts or not isinstance(iso_ts, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - dt).total_seconds()
+
+
 @api.get("/weather/current")
 async def weather_current(lat: float = Query(...), lon: float = Query(...)):
     """Return current observation + a derived 'now' summary using the closest NWS station.
@@ -440,11 +575,9 @@ async def weather_current(lat: float = Query(...), lon: float = Query(...)):
                 stations = await _nws_fetch(hc, stations_url)
                 features = (stations or {}).get("features") or []
                 if features:
-                    station_id = features[0]["properties"]["stationIdentifier"]
-                    obs = await _nws_fetch(hc, f"https://api.weather.gov/stations/{station_id}/observations/latest")
-                    observation = (obs or {}).get("properties") or {}
+                    observation = await _best_observation_from_stations(hc, features)
             except Exception as e:  # noqa: BLE001
-                logger.info("station obs failed: %s", e)
+                logger.info("station list/obs failed: %s", e)
 
         hourly_first: dict = {}
         if forecast_hourly_url:
@@ -455,6 +588,8 @@ async def weather_current(lat: float = Query(...), lon: float = Query(...)):
                     hourly_first = periods[0]
             except Exception as e:  # noqa: BLE001
                 logger.info("hourly fetch failed: %s", e)
+
+        observation = _merge_hourly_into_observation(observation, hourly_first)
 
     return {
         "available": True,
@@ -716,10 +851,41 @@ async def eonet_wildfires():
 #                              DASHBOARD BUNDLE
 # ============================================================================
 @api.get("/dashboard")
-async def dashboard(lat: float = Query(...), lon: float = Query(...)):
+async def dashboard(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    refresh: bool = Query(False, description="If true, bypass cache and refresh upstream data."),
+    location_id: Optional[str] = Query(
+        None,
+        max_length=64,
+        description="Saved location id from the app; stored with each snapshot for history.",
+    ),
+    user_id: str = Depends(get_user_id),
+):
     """One-shot bundle for mobile home: current weather, NOAA alerts, nearby USGS, and
     the next 12 hourly periods. Each is best-effort; failures degrade gracefully.
+
+    Latest row per user + grid in ``weather_data`` reused within WEATHER_DATA_TTL_SEC;
+    each upstream fetch appends a new row (historical record). Pass refresh=1 to force fetch.
     """
+    grid_key = _weather_grid_key(lat, lon)
+    if not refresh:
+        try:
+            cur = (
+                weather_data_col.find({"user_id": user_id, "grid_key": grid_key}, {"_id": 0, "bundle": 1, "fetched_at": 1})
+                .sort("fetched_at", -1)
+                .limit(1)
+            )
+            cached_rows = await cur.to_list(length=1)
+            cached = cached_rows[0] if cached_rows else None
+        except Exception as e:  # noqa: BLE001
+            logger.warning("weather_data read failed: %s", e)
+            cached = None
+        if cached and isinstance(cached.get("bundle"), dict):
+            age = _iso_age_seconds(cached.get("fetched_at"))
+            if age is not None and age < WEATHER_DATA_TTL_SEC:
+                return cached["bundle"]
+
     current_t = weather_current(lat=lat, lon=lon)
     alerts_t = weather_alerts(lat=lat, lon=lon)
     canada_t = canada_alerts(lat=lat, lon=lon)
@@ -735,7 +901,7 @@ async def dashboard(lat: float = Query(...), lon: float = Query(...)):
             return default
         return v
 
-    return {
+    bundle = {
         "current": safe(current, {"available": False}),
         "alerts": safe(alerts, {"available": False, "alerts": []}),
         "canada_alerts": safe(canada, {"available": False, "alerts": []}),
@@ -743,6 +909,21 @@ async def dashboard(lat: float = Query(...), lon: float = Query(...)):
         "forecast": safe(forecast, {"available": False, "periods": [], "hourly": []}),
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
+    fetched_at = bundle["fetched_at"]
+    doc = {
+        "user_id": user_id,
+        "location_id": (location_id.strip() or None) if location_id else None,
+        "grid_key": grid_key,
+        "latitude": lat,
+        "longitude": lon,
+        "fetched_at": fetched_at,
+        "bundle": bundle,
+    }
+    try:
+        await weather_data_col.insert_one(doc)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("weather_data insert failed: %s", e)
+    return bundle
 
 
 app.include_router(api)
@@ -754,4 +935,6 @@ async def on_startup():
     await locations_col.create_index([("user_id", 1), ("id", 1)], unique=True)
     await device_locations_col.create_index([("user_id", 1)], unique=True)
     await push_tokens_col.create_index([("token", 1)], unique=True)
+    await weather_data_col.create_index([("user_id", 1), ("grid_key", 1), ("fetched_at", -1)])
+    await weather_data_col.create_index([("user_id", 1), ("location_id", 1), ("fetched_at", -1)])
     logger.info("Root Record Weather Manager API ready.")

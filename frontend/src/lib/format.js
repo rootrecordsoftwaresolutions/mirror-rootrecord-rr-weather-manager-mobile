@@ -79,6 +79,50 @@ export function clsx(...parts) {
   return parts.filter(Boolean).join(' ');
 }
 
+/**
+ * Station / hourly "now" and grid `forecast.periods` highs are different NWS products;
+ * the grid period high can sit below a fresh observation. Clamp so HIGH ≥ now and LOW ≤ now
+ * when both exist (same temperature unit as `periodUnit`, default F).
+ */
+export function alignDailyHighLowWithNow(
+  high,
+  low,
+  periodUnit,
+  obsTempC,
+  hourlyTemp,
+  hourlyTempUnit
+) {
+  let cur = null;
+  if (obsTempC != null && obsTempC !== undefined && Number.isFinite(Number(obsTempC))) {
+    const c = Number(obsTempC);
+    cur = periodUnit === 'C' ? c : (c * 9) / 5 + 32;
+  } else if (
+    hourlyTemp !== undefined &&
+    hourlyTemp !== null &&
+    hourlyTempUnit &&
+    Number.isFinite(Number(hourlyTemp))
+  ) {
+    const t = Number(hourlyTemp);
+    if (hourlyTempUnit === 'C') {
+      cur = periodUnit === 'C' ? t : (t * 9) / 5 + 32;
+    } else {
+      cur = periodUnit === 'C' ? ((t - 32) * 5) / 9 : t;
+    }
+  }
+  if (cur == null || !Number.isFinite(cur)) {
+    return { high, low };
+  }
+  let h = high;
+  let l = low;
+  if (high !== undefined && high !== null && Number.isFinite(Number(high))) {
+    h = Math.max(Number(high), cur);
+  }
+  if (low !== undefined && low !== null && Number.isFinite(Number(low))) {
+    l = Math.min(Number(low), cur);
+  }
+  return { high: h, low: l };
+}
+
 // NWS observations come in standard SI units; helper to convert and round
 export function fromNwsValue(unit, n) {
   if (n === null || n === undefined) return null;

@@ -2,7 +2,54 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, MapPin, RefreshCw, Plus, Wind, Droplets, Gauge, Sun, AlertTriangle, ArrowUpRight, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
-import { fmtTemp, fmtSpeedKmH, fmtMileOrKm, severityClass, formatTime, clsx } from '../lib/format';
+import {
+  fmtTemp,
+  fmtSpeedKmH,
+  fmtMileOrKm,
+  severityClass,
+  formatTime,
+  clsx,
+  alignDailyHighLowWithNow,
+} from '../lib/format';
+
+/** Skip `/api/dashboard` while a snapshot for this location is younger than this (matches default server TTL). */
+const WEATHER_SNAPSHOT_MAX_AGE_MS = 10 * 60 * 1000;
+
+function weatherSnapshotKey(locationId) {
+  return `rrwm.weatherSnap.v1.${locationId}`;
+}
+
+function readWeatherSnapshot(locationId) {
+  if (!locationId) return null;
+  try {
+    const raw = localStorage.getItem(weatherSnapshotKey(locationId));
+    if (!raw) return null;
+    const row = JSON.parse(raw);
+    const bundle = row?.bundle;
+    if (!bundle || typeof bundle !== 'object') return null;
+    const iso = bundle.fetched_at || row.savedAt; // Worker may omit fetched_at; use last save time
+    if (!iso || typeof iso !== 'string') return null;
+    const t = new Date(iso).getTime();
+    if (Number.isNaN(t)) return null;
+    const age = Date.now() - t;
+    if (age < 0 || age > WEATHER_SNAPSHOT_MAX_AGE_MS) return null;
+    return bundle;
+  } catch {
+    return null;
+  }
+}
+
+function writeWeatherSnapshot(locationId, bundle) {
+  if (!locationId || !bundle) return;
+  try {
+    localStorage.setItem(
+      weatherSnapshotKey(locationId),
+      JSON.stringify({ bundle, savedAt: new Date().toISOString() })
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
 
 function Bento({ icon: Icon, label, value, sub }) {
   return (
@@ -89,14 +136,30 @@ export default function Home() {
     }
   }, [activeId]);
 
-  const loadBundle = useCallback(async (loc) => {
+  const loadBundle = useCallback(async (loc, opts = {}) => {
     if (!loc) return;
+    const force = Boolean(opts.forceRefresh);
+    if (!force) {
+      const cached = readWeatherSnapshot(loc.id);
+      if (cached) {
+        setBundle(cached);
+        setBundleLocId(loc.id);
+        setErr('');
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+    }
     setLoading(true);
     setErr('');
     try {
-      const { data } = await api.dashboard(loc.latitude, loc.longitude);
+      const { data } = await api.dashboard(loc.latitude, loc.longitude, {
+        forceRefresh: force,
+        locationId: loc.id,
+      });
       setBundle(data);
       setBundleLocId(loc.id);
+      writeWeatherSnapshot(loc.id, data);
     } catch (e) {
       setErr(String(e?.response?.data?.detail || e?.message || 'Failed to load weather'));
       setBundleLocId(loc.id);
@@ -117,7 +180,7 @@ export default function Home() {
     const loc = locations.find((l) => l.id === activeId);
     if (!loc) return;
     setRefreshing(true);
-    await loadBundle(loc);
+    await loadBundle(loc, { forceRefresh: true });
   };
 
   const setActive = (id) => {
@@ -151,13 +214,25 @@ export default function Home() {
   const obs = bundle?.current?.observation || {};
   const hourlyNow = bundle?.current?.hourly_now || {};
   const tempC = obs?.temperature?.value;
-  const humidity = obs?.relativeHumidity?.value;
+  const humidity = obs?.relativeHumidity?.value ?? hourlyNow?.relativeHumidity?.value;
   const wind = obs?.windSpeed?.value; // km/h
   const pressurePa = obs?.barometricPressure?.value;
+  const windDirSub =
+    obs?.windDirection?.value !== undefined && obs.windDirection.value !== null
+      ? `${Math.round(obs.windDirection.value)}°`
+      : obs?.windDirectionCardinal || (typeof hourlyNow?.windDirection === 'string' ? hourlyNow.windDirection : '');
   const condition = hourlyNow?.shortForecast || obs?.textDescription || '—';
-  const high = bundle?.forecast?.periods?.find((p) => p.isDaytime)?.temperature;
-  const low = bundle?.forecast?.periods?.find((p) => !p.isDaytime)?.temperature;
-  const periodUnit = bundle?.forecast?.periods?.[0]?.temperatureUnit;
+  const gridHigh = bundle?.forecast?.periods?.find((p) => p.isDaytime)?.temperature;
+  const gridLow = bundle?.forecast?.periods?.find((p) => !p.isDaytime)?.temperature;
+  const periodUnit = bundle?.forecast?.periods?.[0]?.temperatureUnit || 'F';
+  const { high, low } = alignDailyHighLowWithNow(
+    gridHigh,
+    gridLow,
+    periodUnit,
+    tempC,
+    hourlyNow?.temperature,
+    hourlyNow?.temperatureUnit
+  );
 
   return (
     <div className="animate-fadein" data-testid="home-page">
@@ -215,7 +290,7 @@ export default function Home() {
 
             {/* Bento metrics */}
             <div className="grid grid-cols-2 gap-3 mb-6">
-              <Bento icon={Wind} label="Wind" value={fmtSpeedKmH(wind)} sub={obs?.windDirection?.value !== undefined && obs.windDirection.value !== null ? `${Math.round(obs.windDirection.value)}°` : ''} />
+              <Bento icon={Wind} label="Wind" value={fmtSpeedKmH(wind)} sub={windDirSub} />
               <Bento icon={Droplets} label="Humidity" value={humidity != null ? `${Math.round(humidity)}%` : '—'} />
               <Bento icon={Gauge} label="Pressure" value={pressurePa != null ? `${(pressurePa/100).toFixed(0)} hPa` : '—'} />
               <Bento icon={Sun} label="Visibility" value={obs?.visibility?.value != null ? `${(obs.visibility.value/1000).toFixed(1)} km` : '—'} />

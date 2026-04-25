@@ -94,7 +94,15 @@ export const api = {
   forecast: (lat, lon) => client.get('/weather/forecast', { params: { lat, lon } }),
   alerts: (lat, lon) => client.get('/weather/alerts', { params: { lat, lon } }),
   canada: (lat, lon) => client.get('/canada/alerts', { params: { lat, lon } }),
-  dashboard: (lat, lon) => client.get('/dashboard', { params: { lat, lon } }),
+  dashboard: (lat, lon, opts = {}) =>
+    client.get('/dashboard', {
+      params: {
+        lat,
+        lon,
+        ...(opts.locationId ? { location_id: opts.locationId } : {}),
+        ...(opts.forceRefresh ? { refresh: true } : {}),
+      },
+    }),
   // hazards
   earthquakes: (lat, lon, opts = {}) =>
     client.get('/usgs/earthquakes', {

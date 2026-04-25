@@ -211,8 +211,13 @@ class TestEONET:
 
 # ---------------- DASHBOARD ----------------
 class TestDashboard:
-    def test_dashboard_bundle(self):
-        r = requests.get(f"{API}/dashboard", params={"lat": LAT, "lon": LON}, timeout=60)
+    def test_dashboard_bundle(self, guest_headers):
+        r = requests.get(
+            f"{API}/dashboard",
+            params={"lat": LAT, "lon": LON},
+            headers=guest_headers,
+            timeout=60,
+        )
         assert r.status_code == 200
         data = r.json()
         for k in ("current", "alerts", "canada_alerts", "usgs", "forecast", "fetched_at"):
