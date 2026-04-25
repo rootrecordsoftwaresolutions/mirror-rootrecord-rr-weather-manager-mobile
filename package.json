@@ -4,7 +4,7 @@
   "description": "Root Record Weather Manager — mobile client (React) and optional local API (Python).",
   "repository": {
     "type": "git",
-    "url": "https://github.com/RootRecord/rr-weather-manager-mobile.git"
+    "url": "https://github.com/RootRecord/rootrecord-weather-manager-mobile.git"
   },
   "scripts": {
     "changelog:stamp": "node scripts/changelog-stamp.mjs",

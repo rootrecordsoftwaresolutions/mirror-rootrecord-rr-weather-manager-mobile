@@ -42,11 +42,11 @@ Scripts in `frontend/package.json`: `cap:sync`, `android:open`, `android:build`,
 
 ## Pre-release testing (before Google Play)
 
-The **public** source repo for early access is **[github.com/RootRecord/rootrecord-weather-manager](https://github.com/RootRecord/rootrecord-weather-manager)**. It tracks the same app as the private development remote; use it to clone, inspect, and file issues.
+Public repo: **[github.com/RootRecord/rootrecord-weather-manager-mobile](https://github.com/RootRecord/rootrecord-weather-manager-mobile)**.
 
-**APK:** we do not ship a store build from this README alone. Testers can either (1) install from **GitHub Releases** when you attach a signed or debug APK there, or (2) build locally: from `frontend/`, run `pnpm run android:assemble` and share `frontend/android/app/build/outputs/apk/debug/RootRecord-Weather.apk` (debug) or the release output after your signing setup. Pre-releases are **not** a replacement for Play Protect / production distribution.
+**GitHub Releases (for testers, not builders):** each pre-release should ship **only** the installable **APK** (or AAB only if you document sideloading), plus the **README** and **CHANGELOG** as the release description or as attached text files—**not** full build trees, Gradle outputs, or “build it yourself” bundles. Source stays in the repo for us; testers install the binary and read what changed.
 
-**What changed this build:** from the **repo root** (`rr-weather-manager-mobile/`), run **`pnpm changelog:stamp`** before you tag or publish a pre-release. That appends a timestamped block to **`CHANGELOG.md`** listing commits since the last stamp (tracked in **`.changelog-last-ref`**). Optional one-liner: `CHANGELOG_NOTE="Short human summary" pnpm changelog:stamp`. Then commit `CHANGELOG.md` + `.changelog-last-ref` and paste the new section into the GitHub Release notes if you like.
+Pre-releases are **not** Play Store distribution. Maintainers: run **`pnpm changelog:stamp`** at the repo root before you cut a release, commit **`CHANGELOG.md`** and **`.changelog-last-ref`**, then paste the new **Build** block into the release notes when publishing.
 
 ## Optional: local API
 
