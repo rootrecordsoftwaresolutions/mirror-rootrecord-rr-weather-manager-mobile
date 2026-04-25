@@ -1,7 +1,27 @@
 import axios from 'axios';
 
-const BACKEND = process.env.REACT_APP_BACKEND_URL;
+// Default: Cloudflare Worker `rootrecord-primary` (base URL only — no trailing slash, no /api; client adds /api).
+const DEFAULT_BACKEND = 'https://rootrecord-primary.rootrecord.workers.dev';
+
+function normalizeBackendBase(raw) {
+  let base = String(raw ?? '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (!base) return '';
+  // Avoid https://host/api + /locations → …/api/api/locations (404 / “Network Error”)
+  if (base.toLowerCase().endsWith('/api')) {
+    base = base.slice(0, -4).replace(/\/+$/, '');
+  }
+  return base;
+}
+
+const fromEnv = normalizeBackendBase(process.env.REACT_APP_BACKEND_URL);
+const BACKEND = fromEnv || DEFAULT_BACKEND;
 const API = `${BACKEND}/api`;
+
+export function isBackendConfigured() {
+  return Boolean(BACKEND);
+}
 
 const STORAGE_KEYS = {
   token: 'rrwm.token',
@@ -55,15 +75,20 @@ export const session = {
 
 export const api = {
   health: () => client.get('/health'),
-  // auth
-  login: (email, password) => client.post('/auth/login', { email, password }),
-  signup: (email, password) => client.post('/auth/signup', { email, password }),
+  // auth — device_id matches desktop licenseService (Worker forwards to POST /v1/auth/*).
+  login: (email, password) =>
+    client.post('/auth/login', { email, password, device_id: session.guestId() }),
+  signup: (email, password) =>
+    client.post('/auth/signup', { email, password, device_id: session.guestId() }),
   me: () => client.post('/auth/me'),
   // locations
   listLocations: () => client.get('/locations'),
   createLocation: (loc) => client.post('/locations', loc),
   updateLocation: (id, patch) => client.patch(`/locations/${id}`, patch),
   deleteLocation: (id) => client.delete(`/locations/${id}`),
+  /** Latest device GPS for this account (app open); not a named saved location. */
+  reportDeviceLocation: (body) => client.post('/me/device-location', body),
+  registerPushToken: (body) => client.post('/me/push-token', body),
   // weather
   current: (lat, lon) => client.get('/weather/current', { params: { lat, lon } }),
   forecast: (lat, lon) => client.get('/weather/forecast', { params: { lat, lon } }),

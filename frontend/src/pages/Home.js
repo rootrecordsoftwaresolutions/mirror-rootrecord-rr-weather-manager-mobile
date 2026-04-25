@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, MapPin, RefreshCw, Plus, Wind, Droplets, Gauge, Sun, AlertTriangle, ArrowUpRight } from 'lucide-react';
+import { ChevronDown, MapPin, RefreshCw, Plus, Wind, Droplets, Gauge, Sun, AlertTriangle, ArrowUpRight, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
-import { fmtTemp, fmtSpeedKmH, severityClass, formatTime, clsx } from '../lib/format';
+import { fmtTemp, fmtSpeedKmH, fmtMileOrKm, severityClass, formatTime, clsx } from '../lib/format';
 
 function Bento({ icon: Icon, label, value, sub }) {
   return (
@@ -15,6 +15,15 @@ function Bento({ icon: Icon, label, value, sub }) {
       {sub && <div className="text-xs text-neutral-500 font-mono">{sub}</div>}
     </div>
   );
+}
+
+function usgsEventDetailUrl(e) {
+  if (e?.url && /^https?:\/\//i.test(String(e.url))) return e.url;
+  const raw = e?.id;
+  if (!raw) return null;
+  const slug = String(raw).split('/').pop();
+  if (!slug) return null;
+  return `https://earthquake.usgs.gov/earthquakes/eventpage/${encodeURIComponent(slug)}`;
 }
 
 function LocationPicker({ locations, activeId, onPick }) {
@@ -61,6 +70,8 @@ export default function Home() {
   const [locations, setLocations] = useState([]);
   const [activeId, setActiveId] = useState(localStorage.getItem('rrwm.activeLocationId') || '');
   const [bundle, setBundle] = useState(null);
+  /** Which location id `bundle` was loaded for (avoids empty UI gap before first dashboard response). */
+  const [bundleLocId, setBundleLocId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState('');
@@ -85,8 +96,10 @@ export default function Home() {
     try {
       const { data } = await api.dashboard(loc.latitude, loc.longitude);
       setBundle(data);
+      setBundleLocId(loc.id);
     } catch (e) {
       setErr(String(e?.response?.data?.detail || e?.message || 'Failed to load weather'));
+      setBundleLocId(loc.id);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -111,6 +124,10 @@ export default function Home() {
     setActiveId(id);
     localStorage.setItem('rrwm.activeLocationId', id);
   };
+
+  const activeLoc = locations.find((l) => l.id === activeId) || locations[0];
+  /** Full skeleton until dashboard matches active location (covers first location + picker changes; not plain refresh). */
+  const showWeatherSkeleton = Boolean(activeLoc) && !err && bundleLocId !== activeLoc.id;
 
   if (locations.length === 0) {
     return (
@@ -160,11 +177,19 @@ export default function Home() {
       </header>
 
       <section className="px-4">
-        {loading && !bundle ? (
-          <div className="space-y-4">
+        {showWeatherSkeleton ? (
+          <div className="space-y-4" data-testid="home-weather-loading">
+            <div className="flex items-center gap-2 text-sm text-neutral-400 py-1">
+              <Loader2 strokeWidth={1.5} className="w-4 h-4 text-accent animate-spin shrink-0" aria-hidden />
+              <span>
+                Loading weather for <span className="text-white font-medium">{activeLoc.name}</span>…
+              </span>
+            </div>
             <div className="h-32 skeleton" />
             <div className="grid grid-cols-2 gap-3">
-              {[0,1,2,3].map((i) => <div key={i} className="h-20 skeleton" />)}
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-20 skeleton" />
+              ))}
             </div>
           </div>
         ) : (
@@ -200,14 +225,19 @@ export default function Home() {
             {Array.isArray(bundle?.forecast?.hourly) && bundle.forecast.hourly.length > 0 && (
               <div className="mb-6">
                 <h2 className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 mb-2">Next 12 hours</h2>
-                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1" data-testid="home-hourly-strip">
+                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 pt-0.5" data-testid="home-hourly-strip">
                   {bundle.forecast.hourly.slice(0, 12).map((p) => (
-                    <div key={p.number} className="min-w-[68px] bg-container border border-subtle p-2 text-center">
-                      <div className="text-[10px] font-mono text-neutral-400">
+                    <div
+                      key={p.number}
+                      className="flex min-w-[80px] max-w-[92px] shrink-0 flex-col bg-container border border-subtle px-2.5 py-3 text-center"
+                    >
+                      <div className="text-[10px] font-mono text-neutral-400 shrink-0">
                         {new Date(p.startTime).toLocaleTimeString([], { hour: 'numeric' })}
                       </div>
-                      <div className="font-mono text-lg mt-1">{fmtTemp(p.temperature, p.temperatureUnit)}</div>
-                      <div className="text-[10px] text-neutral-500 mt-1 truncate">{p.shortForecast}</div>
+                      <div className="font-mono text-lg mt-1 shrink-0">{fmtTemp(p.temperature, p.temperatureUnit)}</div>
+                      <div className="mt-2 min-h-[4rem] text-[10px] leading-snug text-neutral-500 line-clamp-4 break-words hyphens-auto">
+                        {p.shortForecast}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -252,26 +282,54 @@ export default function Home() {
               <div className="mb-6">
                 <h2 className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 mb-2">Recent earthquakes (300mi)</h2>
                 <div className="bg-container border border-subtle">
-                  {bundle.usgs.events.slice(0, 4).map((e) => (
-                    <div key={e.id} className="flex items-center gap-3 p-3 border-b border-subtle last:border-0">
-                      <div className={clsx(
-                        'w-10 h-10 flex items-center justify-center font-mono text-sm font-bold',
-                        e.magnitude >= 7 ? 'bg-mag-critical text-white' :
-                        e.magnitude >= 5 ? 'bg-mag-high text-black' :
-                        e.magnitude >= 3 ? 'bg-mag-mid text-black' : 'bg-mag-low text-black'
-                      )}>
-                        {Number(e.magnitude).toFixed(1)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm truncate">{e.place}</div>
-                        <div className="text-[10px] font-mono text-neutral-500">
-                          {e.depth_km != null && `${e.depth_km.toFixed(0)} km · `}
-                          {e.distance_miles != null && `${e.distance_miles.toFixed(0)} mi away`}
+                  {bundle.usgs.events.slice(0, 4).map((e) => {
+                    const detailUrl = usgsEventDetailUrl(e);
+                    const rowClass = clsx(
+                      'flex items-center gap-3 p-3 border-b border-subtle last:border-0',
+                      detailUrl && 'no-underline text-inherit cursor-pointer hover:bg-containerHover active:opacity-90'
+                    );
+                    const inner = (
+                      <>
+                        <div className={clsx(
+                          'w-10 h-10 shrink-0 flex items-center justify-center font-mono text-sm font-bold',
+                          e.magnitude >= 7 ? 'bg-mag-critical text-white' :
+                          e.magnitude >= 5 ? 'bg-mag-high text-black' :
+                          e.magnitude >= 3 ? 'bg-mag-mid text-black' : 'bg-mag-low text-black'
+                        )}>
+                          {Number(e.magnitude).toFixed(1)}
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm truncate">{e.place}</div>
+                          <div className="text-[10px] font-mono text-neutral-500">
+                            {e.depth_km != null && `${e.depth_km.toFixed(0)} km · `}
+                            {e.distance_miles != null && `${fmtMileOrKm(e.distance_miles)} away`}
+                          </div>
+                        </div>
+                        {detailUrl ? (
+                          <ArrowUpRight strokeWidth={1.5} className="w-4 h-4 shrink-0 text-accent" aria-hidden />
+                        ) : (
+                          <ArrowUpRight strokeWidth={1.5} className="w-4 h-4 shrink-0 text-neutral-600" aria-hidden />
+                        )}
+                      </>
+                    );
+                    return detailUrl ? (
+                      <a
+                        key={e.id}
+                        href={detailUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="home-usgs-event-row"
+                        className={rowClass}
+                        aria-label={`Open USGS details for magnitude ${e.magnitude}`}
+                      >
+                        {inner}
+                      </a>
+                    ) : (
+                      <div key={e.id} data-testid="home-usgs-event-row" className={rowClass}>
+                        {inner}
                       </div>
-                      <ArrowUpRight strokeWidth={1.5} className="w-4 h-4 text-neutral-500" />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

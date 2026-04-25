@@ -1,5 +1,6 @@
 # Assets (mobile and brand reference)
 
+- **`brand/`** — app logo master (`logo-mark.svg`) and export notes for Play / legacy mipmaps.
 - **Posters, photos, `github-icon.jpg`, etc.** — store listings, social, and README; not loaded by the dev server at runtime unless you wire them in.
 - **`notification-sounds-source/*.mp3`** — candidate alert sounds for a native app (iOS / Android) or a web build that plays MP3; pick and ship the set you license for production.
 

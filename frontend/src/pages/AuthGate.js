@@ -24,8 +24,13 @@ export default function AuthGate({ onSignedIn, onContinueGuest }) {
       session.setSession(data.token, data.email, data.pro_unlocked);
       onSignedIn?.();
     } catch (e2) {
-      const msg = e2?.response?.data?.detail || e2?.message || 'Sign in failed.';
-      setErr(String(msg));
+      const detail = e2?.response?.data?.detail;
+      const net =
+        e2?.code === 'ERR_NETWORK' || String(e2?.message || '').toLowerCase().includes('network error')
+          ? ' Can’t reach the API — check connectivity and REACT_APP_BACKEND_URL after a rebuild.'
+          : '';
+      const msg = detail || e2?.message || 'Sign in failed.';
+      setErr(String(msg) + net);
     } finally {
       setBusy(false);
     }
@@ -120,7 +125,7 @@ export default function AuthGate({ onSignedIn, onContinueGuest }) {
           </button>
 
           <p className="mt-6 text-[11px] text-neutral-500 leading-relaxed">
-            Guest mode keeps your data on this device. Cloud sync, Pro alert sounds, and unlimited
+            Guest mode keeps your data on this device. Cloud sync, critical notifications (Pro), and unlimited
             refreshes require a Root Record account.
           </p>
         </div>

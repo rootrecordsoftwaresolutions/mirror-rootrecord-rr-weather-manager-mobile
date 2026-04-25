@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "516007816156",
+    "firebase_url": "https://root-record-default-rtdb.firebaseio.com",
+    "project_id": "root-record",
+    "storage_bucket": "root-record.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:516007816156:android:ee65bd4fe6ddb5a28d3d19",
+        "android_client_info": {
+          "package_name": "com.rootrecord.weathermanager"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "516007816156-650a0oa8hpeh54khb4s41h49f0t0oesp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9XGIaRDxNtfCkUciZW0_3b0K9yWdP7JU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "516007816156-2peffqmt1uqmem3bdohli3io6ln96vuv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

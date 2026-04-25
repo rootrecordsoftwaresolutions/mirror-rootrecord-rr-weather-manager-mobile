@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Search, X } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Navigation, Search, X } from 'lucide-react';
 import L from 'leaflet';
 import { api } from '../lib/api';
 
@@ -20,7 +20,17 @@ export default function LocationMap() {
   const [name, setName] = useState('');
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
+  const [geoBusy, setGeoBusy] = useState(false);
   const [err, setErr] = useState('');
+
+  const applyPick = useCallback((lat, lng, zoom = 12) => {
+    setCoords({ lat, lng });
+    const map = mapRef.current;
+    if (!map) return;
+    map.setView([lat, lng], zoom);
+    if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
+    else markerRef.current = L.marker([lat, lng]).addTo(map);
+  }, []);
 
   useEffect(() => {
     const map = L.map('rrwm-map', {
@@ -35,15 +45,13 @@ export default function LocationMap() {
 
     map.on('click', (e) => {
       const { lat, lng } = e.latlng;
-      setCoords({ lat, lng });
-      if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
-      else markerRef.current = L.marker([lat, lng]).addTo(map);
+      applyPick(lat, lng, map.getZoom());
     });
 
     mapRef.current = map;
     setTimeout(() => map.invalidateSize(), 100);
 
-    // Try to use device geolocation as initial guess
+    // Center map on device location without selecting a point until the user taps or uses "Use my location"
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -55,7 +63,51 @@ export default function LocationMap() {
     }
 
     return () => map.remove();
-  }, []);
+  }, [applyPick]);
+
+  const reverseGeocodeLabel = async (lat, lng) => {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&format=json`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    const j = await r.json();
+    const addr = j?.address || {};
+    const label =
+      [addr.neighbourhood, addr.suburb, addr.city, addr.town, addr.village].find(Boolean) ||
+      (typeof j?.display_name === 'string' ? j.display_name.split(',')[0].trim() : '');
+    return label || '';
+  };
+
+  const useMyLocation = () => {
+    setErr('');
+    if (!navigator.geolocation) {
+      setErr('This device cannot access location.');
+      return;
+    }
+    setGeoBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        applyPick(lat, lng, 14);
+        if (!name.trim()) {
+          try {
+            const label = await reverseGeocodeLabel(lat, lng);
+            if (label) setName(label);
+          } catch {
+            /* optional label */
+          }
+        }
+        setGeoBusy(false);
+      },
+      (e) => {
+        setGeoBusy(false);
+        if (e?.code === 1) setErr('Location permission denied. Enable location in system settings.');
+        else setErr('Could not get your location. Try again or pick a point on the map.');
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
+  };
 
   const doSearch = async (e) => {
     e.preventDefault();
@@ -68,12 +120,7 @@ export default function LocationMap() {
       if (Array.isArray(j) && j.length) {
         const lat = parseFloat(j[0].lat);
         const lng = parseFloat(j[0].lon);
-        setCoords({ lat, lng });
-        if (mapRef.current) {
-          mapRef.current.setView([lat, lng], 11);
-          if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
-          else markerRef.current = L.marker([lat, lng]).addTo(mapRef.current);
-        }
+        applyPick(lat, lng, 11);
         if (!name) setName(j[0].display_name.split(',')[0]);
       } else {
         setErr('No matching place found.');
@@ -85,7 +132,7 @@ export default function LocationMap() {
 
   const save = async () => {
     setErr('');
-    if (!coords) return setErr('Tap on the map to select a point.');
+    if (!coords) return setErr('Choose a point on the map or use “Use my location”.');
     if (!name.trim()) return setErr('Enter a name for this location.');
     setBusy(true);
     try {
@@ -121,14 +168,51 @@ export default function LocationMap() {
         </form>
       </div>
 
-      <div id="rrwm-map" className="flex-1" />
+      <div id="rrwm-map" className="flex-1 relative">
+        {geoBusy && (
+          <div
+            className="absolute inset-0 z-[4] bg-app/50 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 px-6 pointer-events-none"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 strokeWidth={1.5} className="w-7 h-7 text-accent animate-spin" />
+            <p className="text-xs text-neutral-400 text-center">Finding your location…</p>
+          </div>
+        )}
+        {busy && (
+          <div
+            className="absolute inset-0 z-[5] bg-app/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3 px-6"
+            data-testid="location-save-loading"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <Loader2 strokeWidth={1.5} className="w-8 h-8 text-accent animate-spin" />
+            <p className="text-sm text-neutral-300 text-center">Saving your location…</p>
+          </div>
+        )}
+      </div>
 
       {/* Bottom sheet */}
       <div className="bg-container border-t border-subtle p-4 animate-slideup">
         <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 mb-1">Selected coordinates</div>
         <div className="font-mono text-sm mb-3" data-testid="location-coords">
-          {coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : '— Tap map to choose —'}
+          {coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : '— Tap map or use GPS below —'}
         </div>
+        <button
+          type="button"
+          onClick={useMyLocation}
+          disabled={busy || geoBusy}
+          data-testid="location-use-my-location"
+          className="w-full mb-3 py-2.5 rounded-sm border border-subtle bg-app hover:bg-containerHover text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {geoBusy ? (
+            <Loader2 strokeWidth={1.5} className="w-4 h-4 animate-spin" />
+          ) : (
+            <Navigation strokeWidth={1.5} className="w-4 h-4 text-accent" />
+          )}
+          {geoBusy ? 'Getting location…' : 'Use my location'}
+        </button>
         <input
           data-testid="location-name-input"
           value={name}

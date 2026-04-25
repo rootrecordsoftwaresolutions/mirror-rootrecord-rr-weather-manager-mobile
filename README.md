@@ -34,7 +34,7 @@ Set `REACT_APP_BACKEND_URL` to your API base (no trailing `/api`); the client us
 
 Native project: **`frontend/android/`** (Capacitor 6). This dev PC uses **JDK 17** for Gradle via **`%USERPROFILE%\.gradle\gradle.properties`**, **`ANDROID_HOME`** / **`ANDROID_SDK_ROOT`** → `%LOCALAPPDATA%\Android\Sdk`, and **`frontend/android/local.properties`** (`sdk.dir`; gitignored).
 
-**Debug APK (CLI):** from **`frontend/`**, run **`pnpm run android:assemble`**. Output: **`frontend/android/app/build/outputs/apk/debug/app-debug.apk`**.
+**Debug APK (CLI):** from **`frontend/`**, run **`pnpm run android:assemble`**. Output: **`frontend/android/app/build/outputs/apk/debug/RootRecord-Weather.apk`** (release: **`.../release/RootRecord-Weather-release.apk`**).
 
 **Android Studio:** open **`frontend/android`**, sync Gradle, choose a device or emulator, **Run**. Double-click **`open-weather-android-studio.bat`** in this repo root, or run **`pnpm run android:open`** from **`frontend/`**.
 

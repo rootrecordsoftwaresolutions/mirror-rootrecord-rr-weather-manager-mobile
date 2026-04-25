@@ -178,9 +178,9 @@ export default function Hazards() {
               {cyc.map((e) => (
                 <a
                   key={e.id}
-                  href={`https://www.google.com/search?q=${encodeURIComponent(e.title + ' cyclone')}`}
+                  href={`https://www.google.com/search?q=${encodeURIComponent(`${e.title || 'Tropical cyclone'} tropical cyclone storm`)}`}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   data-testid="cyclone-row"
                   className="block p-3 border-b border-subtle last:border-0 hover:bg-containerHover"
                 >
@@ -198,7 +198,14 @@ export default function Hazards() {
             <div className="bg-container border border-subtle" data-testid="wildfires-list">
               {fires.length === 0 && <Empty label="No active wildfire events." />}
               {fires.map((e) => (
-                <a key={e.id} href={(e.sources||[])[0]} target="_blank" rel="noreferrer" className="block p-3 border-b border-subtle last:border-0 hover:bg-containerHover">
+                <a
+                  key={e.id}
+                  href={`https://www.google.com/search?q=${encodeURIComponent(`${e.title || 'Active wildfire'} wildfire`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="wildfire-row"
+                  className="block p-3 border-b border-subtle last:border-0 hover:bg-containerHover"
+                >
                   <div className="text-[10px] uppercase tracking-widest text-sev-severe font-mono flex items-center gap-1"><Flame className="w-3 h-3"/> Wildfire</div>
                   <div className="text-sm">{e.title}</div>
                   <div className="text-[10px] font-mono text-neutral-500 mt-1">{formatTime(e.date)}{e.lat!=null && ` · ${e.lat.toFixed(1)},${e.lon.toFixed(1)}`}</div>

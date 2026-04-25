@@ -1,13 +1,14 @@
 """Root Record Weather Manager — Mobile API.
 
-Proxies the existing Cloudflare Workers license/auth API used by the desktop app,
-provides per-user saved location CRUD on MongoDB, and aggregates public weather +
-hazard feeds (NOAA NWS, Environment Canada, USGS, NASA EONET) for mobile clients.
+Auth is validated via the single Cloudflare Worker `rootrecord-primary` (POST /api/auth/*).
+Per-user saved locations use MongoDB; weather + hazard feeds are aggregated from public APIs.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import logging
 import math
 import os
@@ -23,14 +24,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 
+from push_fcm import is_fcm_configured, send_multicast_blocking
+
 load_dotenv()
 
 # --------------------------------------------------------------------------- env
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
-LICENSE_API_BASE_URL = os.environ.get(
-    "LICENSE_API_BASE_URL",
-    "https://rootrecord-license.wildecho94.workers.dev",
+# Same origin as the mobile Worker API (no separate auth Worker).
+PRIMARY_API_BASE = (
+    os.environ.get("WEATHER_API_PUBLIC_URL")
+    or os.environ.get("ROOTRECORD_PRIMARY_API")
+    or "https://rootrecord-primary.rootrecord.workers.dev"
 ).rstrip("/")
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 
@@ -42,6 +47,8 @@ client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 locations_col = db["locations"]
 guest_state_col = db["guest_state"]
+device_locations_col = db["device_locations"]
+push_tokens_col = db["push_tokens"]
 
 # --------------------------------------------------------------------------- app
 app = FastAPI(title="Root Record Weather Manager API", version="1.0.0")
@@ -82,9 +89,28 @@ class LocationUpdate(BaseModel):
     longitude: Optional[float] = None
 
 
+class DeviceLocationReport(BaseModel):
+    """Latest device GPS as reported by the client (e.g. on app open). Not a saved named location."""
+
+    latitude: float
+    longitude: float
+    accuracy_m: Optional[float] = None
+
+
+class PushTokenRegister(BaseModel):
+    token: str = Field(..., min_length=20, max_length=512)
+    platform: str = Field(default="android", max_length=32)
+
+
+class PushBroadcastBody(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    body: str = Field(..., min_length=1, max_length=500)
+
+
 class AuthCredentials(BaseModel):
     email: str
     password: str
+    device_id: Optional[str] = None
 
 
 class AuthResponse(BaseModel):
@@ -103,15 +129,13 @@ async def get_user_id(
     authorization: Optional[str] = Header(None),
     x_guest_id: Optional[str] = Header(None),
 ) -> str:
-    """Resolve the caller. Either signed-in (Authorization: Bearer <token> validated against
-    Cloudflare Workers) or guest mode (X-Guest-Id header from device).
-    """
+    """Resolve the caller: Bearer token validated against rootrecord-primary /api/auth/me, or guest."""
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         async with httpx.AsyncClient(timeout=12.0) as hc:
             try:
                 r = await hc.post(
-                    f"{LICENSE_API_BASE_URL}/license/prepare",
+                    f"{PRIMARY_API_BASE}/api/auth/me",
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                     json={},
                 )
@@ -121,13 +145,28 @@ async def get_user_id(
                     if email and data.get("authenticated"):
                         return f"user:{email}"
             except Exception as e:  # noqa: BLE001
-                logger.warning("license prepare failed: %s", e)
+                logger.warning("auth/me validation failed: %s", e)
         raise HTTPException(status_code=401, detail="Invalid or expired session.")
     if x_guest_id:
         gid = re.sub(r"[^a-zA-Z0-9_-]", "", x_guest_id)[:64]
         if gid:
             return f"guest:{gid}"
     raise HTTPException(status_code=401, detail="Sign in or provide a guest id.")
+
+
+async def require_push_broadcast_admin(
+    x_rr_push_admin_key: Optional[str] = Header(None, description="Must match server RR_PUSH_ADMIN_SECRET"),
+) -> None:
+    """Protects POST /api/internal/push-broadcast (dev / ops only)."""
+    secret = (os.environ.get("RR_PUSH_ADMIN_SECRET") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="RR_PUSH_ADMIN_SECRET is not set on the server.")
+    if not x_rr_push_admin_key:
+        raise HTTPException(status_code=401, detail="Missing X-RR-Push-Admin-Key header.")
+    p_hash = hashlib.sha256(x_rr_push_admin_key.encode("utf-8")).digest()
+    s_hash = hashlib.sha256(secret.encode("utf-8")).digest()
+    if not hmac.compare_digest(p_hash, s_hash):
+        raise HTTPException(status_code=401, detail="Invalid admin key.")
 
 
 def _doc_out(doc: dict) -> dict:
@@ -166,15 +205,27 @@ async def health():
 
 
 # ============================================================================
-#                                   AUTH (proxy)
+#                                   AUTH (proxy → rootrecord-primary /api/auth/*)
 # ============================================================================
-async def _proxy_license(path: str, payload: dict, token: Optional[str] = None) -> dict:
+def _license_error_detail(data: object, status: int) -> str:
+    msg = ""
+    if isinstance(data, dict):
+        msg = (data.get("detail") if isinstance(data.get("detail"), str) else "") or ""
+        if not msg:
+            msg = data.get("message") or (data.get("error") if isinstance(data.get("error"), str) else "")
+        if not msg and isinstance(data.get("error"), dict):
+            msg = data["error"].get("message") or ""
+    return msg or f"Auth failed (HTTP {status})"
+
+
+async def _proxy_primary_auth(path: str, payload: dict, token: Optional[str] = None) -> dict:
+    """POST {PRIMARY_API_BASE}/api/auth/..."""
     async with httpx.AsyncClient(timeout=15.0) as hc:
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         try:
-            r = await hc.post(f"{LICENSE_API_BASE_URL}{path}", headers=headers, json=payload)
+            r = await hc.post(f"{PRIMARY_API_BASE}/api{path}", headers=headers, json=payload)
         except httpx.RequestError as e:
             raise HTTPException(status_code=502, detail=f"Auth service unreachable: {e}") from e
         try:
@@ -182,18 +233,17 @@ async def _proxy_license(path: str, payload: dict, token: Optional[str] = None) 
         except Exception:  # noqa: BLE001
             data = {}
         if r.status_code >= 400:
-            msg = ""
-            if isinstance(data, dict):
-                msg = data.get("message") or (data.get("error") if isinstance(data.get("error"), str) else "")
-                if not msg and isinstance(data.get("error"), dict):
-                    msg = data["error"].get("message") or ""
-            raise HTTPException(status_code=r.status_code, detail=msg or f"Auth failed (HTTP {r.status_code})")
+            raise HTTPException(status_code=r.status_code, detail=_license_error_detail(data, r.status_code))
         return data if isinstance(data, dict) else {}
 
 
 @api.post("/auth/login", response_model=AuthResponse)
 async def auth_login(creds: AuthCredentials):
-    data = await _proxy_license("/license/login", {"email": creds.email, "password": creds.password})
+    payload: dict = {"email": creds.email, "password": creds.password}
+    did = (creds.device_id or "").strip()
+    if did:
+        payload["device_id"] = did
+    data = await _proxy_primary_auth("/auth/login", payload)
     token = data.get("access_token") or data.get("token")
     return AuthResponse(
         ok=True,
@@ -207,7 +257,11 @@ async def auth_login(creds: AuthCredentials):
 
 @api.post("/auth/signup", response_model=AuthResponse)
 async def auth_signup(creds: AuthCredentials):
-    data = await _proxy_license("/license/signup", {"email": creds.email, "password": creds.password})
+    payload: dict = {"email": creds.email, "password": creds.password}
+    did = (creds.device_id or "").strip()
+    if did:
+        payload["device_id"] = did
+    data = await _proxy_primary_auth("/auth/signup", payload)
     token = data.get("access_token") or data.get("token")
     return AuthResponse(
         ok=True,
@@ -224,7 +278,18 @@ async def auth_me(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing token")
     token = authorization.split(" ", 1)[1].strip()
-    data = await _proxy_license("/license/prepare", {}, token=token)
+    async with httpx.AsyncClient(timeout=15.0) as hc:
+        r = await hc.post(
+            f"{PRIMARY_API_BASE}/api/auth/me",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={},
+        )
+        try:
+            data = r.json()
+        except Exception:  # noqa: BLE001
+            data = {}
+        if r.status_code >= 400:
+            raise HTTPException(status_code=r.status_code, detail=_license_error_detail(data, r.status_code))
     return {
         "authenticated": bool(data.get("authenticated")),
         "email": (data.get("email") or "").strip(),
@@ -274,6 +339,74 @@ async def delete_location(location_id: str, user_id: str = Depends(get_user_id))
     if res.deleted_count == 0:
         raise HTTPException(404, "Location not found.")
     return {"ok": True}
+
+
+# ============================================================================
+#                         DEVICE LOCATION (last known GPS)
+# ============================================================================
+@api.post("/me/device-location")
+async def report_device_location(payload: DeviceLocationReport, user_id: str = Depends(get_user_id)):
+    """Upsert the caller's most recent coordinates (privacy: same auth as saved locations)."""
+    if not (-90 <= payload.latitude <= 90) or not (-180 <= payload.longitude <= 180):
+        raise HTTPException(400, "Latitude/longitude out of range.")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "user_id": user_id,
+        "latitude": payload.latitude,
+        "longitude": payload.longitude,
+        "accuracy_m": payload.accuracy_m,
+        "updated_at": now,
+    }
+    await device_locations_col.update_one({"user_id": user_id}, {"$set": doc}, upsert=True)
+    return {"ok": True, "updated_at": now}
+
+
+# ============================================================================
+#                    PUSH TOKENS + DEV BROADCAST (FCM)
+# ============================================================================
+@api.post("/me/push-token")
+async def register_push_token(payload: PushTokenRegister, user_id: str = Depends(get_user_id)):
+    """Store FCM registration token for this user/guest (native app only)."""
+    tok = payload.token.strip()
+    if len(tok) < 20:
+        raise HTTPException(status_code=400, detail="Invalid token.")
+    plat = (payload.platform or "android").strip().lower()[:32]
+    now = datetime.now(timezone.utc).isoformat()
+    await push_tokens_col.update_one(
+        {"token": tok},
+        {"$set": {"user_id": user_id, "token": tok, "platform": plat, "updated_at": now}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.post("/internal/push-broadcast")
+async def internal_push_broadcast(
+    payload: PushBroadcastBody,
+    _authorized: None = Depends(require_push_broadcast_admin),
+):
+    """Send a notification to every registered FCM token (test / ops). Requires X-RR-Push-Admin-Key."""
+    if not is_fcm_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="FCM not configured. Set FCM_SERVICE_ACCOUNT_JSON to the path of your Firebase service account JSON file.",
+        )
+    seen: set[str] = set()
+    tokens: List[str] = []
+    async for doc in push_tokens_col.find({}, {"_id": 0, "token": 1}):
+        t = (doc.get("token") or "").strip()
+        if t and t not in seen:
+            seen.add(t)
+            tokens.append(t)
+    if not tokens:
+        return {
+            "ok": True,
+            "message": "No push tokens registered yet. Open the app on a device with FCM configured.",
+            "fcm": {"success": 0, "failure": 0, "total_tokens": 0, "errors": []},
+        }
+    result = await asyncio.to_thread(send_multicast_blocking, tokens, payload.title, payload.body)
+    logger.info("push-broadcast fcm result: %s", result)
+    return {"ok": True, "fcm": result}
 
 
 # ============================================================================
@@ -619,4 +752,6 @@ app.include_router(api)
 async def on_startup():
     await locations_col.create_index([("user_id", 1)])
     await locations_col.create_index([("user_id", 1), ("id", 1)], unique=True)
+    await device_locations_col.create_index([("user_id", 1)], unique=True)
+    await push_tokens_col.create_index([("token", 1)], unique=True)
     logger.info("Root Record Weather Manager API ready.")

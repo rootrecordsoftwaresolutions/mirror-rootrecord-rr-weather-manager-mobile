@@ -79,7 +79,7 @@ export default function Settings({ onSignedOut }) {
         {isAuthed ? (
           <>
             <Row icon={Mail} label="Signed in as" value={email || '—'} testId="settings-account-email" />
-            <Row icon={isPro ? Globe : Lock} label={isPro ? 'Root Record Pro' : 'Free tier'} value={isPro ? 'Critical popups + custom sounds enabled' : 'Critical popups locked — visit RootRecord.com'} testId="settings-tier" />
+            <Row icon={isPro ? Globe : Lock} label={isPro ? 'Root Record Pro' : 'Free tier'} value={isPro ? 'Critical notifications + custom sounds enabled' : 'Critical notifications locked — visit rootrecord.info'} testId="settings-tier" />
             <Row icon={LogOut} label="Sign out of this device" onClick={onSignOut} testId="settings-signout" danger />
           </>
         ) : (
@@ -129,8 +129,8 @@ export default function Settings({ onSignedOut }) {
       <Section title="Pro alerts" testId="settings-pro-section">
         <div className="p-4 text-xs text-neutral-400 leading-relaxed">
           {isPro
-            ? 'Critical popups and custom sounds are enabled. Configure them on the desktop app — mobile sync is coming next.'
-            : 'Critical popups + custom alert sounds are part of Root Record Pro. Subscribe at RootRecord.com to unlock.'}
+            ? 'Critical notifications and custom sounds are enabled. Configure them on the desktop app — mobile sync is coming next.'
+            : 'Critical notifications + custom alert sounds are part of Root Record Pro. Subscribe at rootrecord.info to unlock.'}
         </div>
       </Section>
 

@@ -1,3 +1,8 @@
+// Firebase app-level Groovy: google-services plugin (version from root `plugins { ... apply false }`)
+plugins {
+    id 'com.google.gms.google-services'
+}
+
 apply plugin: 'com.android.application'
 
 android {
@@ -22,6 +27,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach { output ->
+            output.outputFileName = variant.buildType.name == "release" ? "RootRecord-Weather-release.apk" : "RootRecord-Weather.apk"
+        }
+    }
 }
 
 repositories {
@@ -32,6 +43,10 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // Firebase BoM — keep versions aligned (see https://firebase.google.com/docs/android/setup#available-libraries)
+    implementation platform('com.google.firebase:firebase-bom:34.12.0')
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-messaging'
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
@@ -43,12 +58,4 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
-
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}
+// google-services is applied via `plugins { id 'com.google.gms.google-services' }` above — requires `app/google-services.json`.
