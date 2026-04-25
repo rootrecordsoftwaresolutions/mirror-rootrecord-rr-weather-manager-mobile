@@ -2,7 +2,10 @@
   "name": "rrweather-mobile",
   "version": "1.0.0",
   "private": true,
+  "homepage": ".",
   "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-dropdown-menu": "^2.1.2",
     "@radix-ui/react-label": "^2.1.0",
@@ -26,7 +29,11 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test"
+    "test": "react-scripts test",
+    "cap:sync": "pnpm run build && pnpm exec cap sync",
+    "android:open": "pnpm exec cap open android",
+    "android:build": "pnpm run build && pnpm exec cap sync android",
+    "android:assemble": "pnpm exec cap sync android && cd android && .\\gradlew.bat assembleDebug"
   },
   "eslintConfig": {
     "extends": [
@@ -46,6 +53,7 @@
     ]
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13"

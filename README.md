@@ -32,7 +32,13 @@ Set `REACT_APP_BACKEND_URL` to your API base (no trailing `/api`); the client us
 
 ## Android (Capacitor)
 
-Capacitor is already wired in `frontend/package.json` (`cap:sync`, `android:open`, `android:build`). After a **good** workspace install and `pnpm run build` (from this repo’s root) or `pnpm run build` from `frontend/`, run `npx cap add android` once from `frontend/` (creates `frontend/android/`), then `npx cap open android` and build in Android Studio. JDK 17 and Android SDK are required.
+The native project lives in **`frontend/android/`** (Capacitor 6). Use **JDK 17** for Gradle (the Android Gradle Plugin used here does not run the Gradle daemon on **JDK 25**). Set **`ANDROID_HOME`** (and optionally **`ANDROID_SDK_ROOT`**) to your Android SDK, e.g. `%LOCALAPPDATA%\Android\Sdk` on Windows.
+
+**Typical flow (from `frontend/`):** `pnpm run build` → `pnpm exec cap sync android` → open **`android/`** in Android Studio and **Run**, or from `frontend/android/` run **`.\gradlew.bat assembleDebug`** (debug APK under `app/build/outputs/apk/debug/`).
+
+**Gradle JVM:** if your default `java` is newer than Gradle supports (for example **JDK 25**), point Gradle at **JDK 17** with `org.gradle.java.home` in **`%USERPROFILE%\.gradle\gradle.properties`**. **`frontend/android/local.properties`** can set `sdk.dir` for CLI builds (gitignored—Android Studio can create it, or copy from a teammate’s example with your own SDK path).
+
+Scripts in `frontend/package.json`: `cap:sync`, `android:open`, `android:build`, `android:assemble`.
 
 ## Optional: local API
 
