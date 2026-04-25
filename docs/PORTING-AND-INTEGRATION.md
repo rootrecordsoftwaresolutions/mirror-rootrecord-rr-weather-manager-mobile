@@ -1,30 +1,24 @@
-# Porting and integration (e.g. Android, iOS)
+# Porting and integration (mobile)
 
-This repository is a **Windows Electron** app. A native **mobile** client is **not** a port of the Electron process model; plan to **re-implement the UI and lifecycle** and align with the same product rules and backends where they apply.
+This repository is set up for **mobile-oriented** development: the **React** app under `frontend/` and the **FastAPI** service under `backend/`. Wire the UI to your deployed API with `REACT_APP_BACKEND_URL`.
 
-## What to reuse as **spec**
+## What to use as the contract
 
-- **Product behavior** — user-facing flows described in the root `README` (guest vs signed in, at least one location, update checks from public Releases, etc.).
-- **License and account** — the **HTTP API** shape in `src/licenseService.js` (e.g. `/v1` routes, entitlement caching, device id files are desktop-specific). A mobile app should use **your** secure session model, not a copy of on-disk `license_*.json` files.
-- **Data contracts** — understand what the current app **stores in SQLite** and what it **fetches** from public APIs; mobile may choose different caching and sync, but the **source-of-truth** and privacy story should match product policy.
-- **Optional backup / cloud** — `src/cloudBackup.js` shows how the desktop app negotiates with an optional **backup** service URL (`ROOTRECORD_BACKUP_API_BASE_URL` override). Any mobile “sync” must be designed and documented for that platform.
+- **HTTP API** — `frontend/src/lib/api.js` lists the paths the UI expects under `/api` (auth, locations, weather, hazards, dashboard).
+- **Backend** — `backend/server.py` implements the same shape for local or hosted runs (MongoDB, license Worker proxy, public weather/hazard feeds).
+- **Session** — the web app uses `localStorage` for tokens and guest id; a native app should use **Keychain / Keystore** and your product’s session model instead of copying storage keys blindly.
 
-## What not to expect
+## Native iOS / Android
 
-- No shared **UI** or **view** code with Electron; **preload** and **IPC** are not applicable. Replace with the platform’s navigation, permissions, and background work rules.
-- **NSIS** / `electron-builder` / `win-unpacked` are irrelevant to mobile. Ignore `release/`, `dist/`, and Windows-only scripts for store builds.
-- **electron-updater** does not apply. Mobile apps use **App Store** / **Play** updates (or in-app **OTA** you define separately), not `latest.yml` from GitHub.
+- There is **no** shared view layer with a future native app; reuse **behavior** and **API contracts**, not UI code, unless you adopt a cross-platform stack (e.g. React Native) and port components deliberately.
+- **Push, background fetch, and location** follow platform rules; map the same product limits (e.g. guest vs signed-in) in your client.
 
 ## Design and media
 
-- **Colors, iconography, marketing stills** — `assets/README.md` distinguishes **runtime** art (`favicon.ico`, `installer-sidebar.jpg`, `notification-sounds-source/`) from **reference-only** **marketing** files (posters, photos) for a consistent brand on new platforms.
-- `COMMERCIAL_API_PRICE_CHART.txt` and `FREEMIUM_PRO_OPTIONS.txt` in the repo root (if present) are **context** for tiers and commercial positioning, not runtime.
+- **`design_guidelines.json`** and stills under `assets/` support a consistent brand for store listings and iconography.
 
-## Suggested work order for a new client
+## Suggested work order
 
-1. Re-read the root `README` and [ARCHITECTURE.md](./ARCHITECTURE.md) for feature scope and auth modes.
-2. List **endpoints and headers** the desktop app actually calls (search `fetch` in `src/` and `licenseService.js`, plus `cloudBackup.js`).
-3. Prototype **auth and entitlement** against staging if you have `LICENSE_API_BASE_URL` set for dev.
-4. Recreate **location, alerts, and hazard** UX to match policy and your platform’s **network** and **location** permissions.
-
-If you add a new platform-specific repo, link to this private source and keep **one** public customer-facing version story in the org’s download/README sites.
+1. Run **`frontend`** against a configured **`backend`** (or staging API).
+2. Harden **auth and guest** flows for your target platform.
+3. Plan **store** distribution and updates (App Store / Play); this tree does not include desktop installers or `latest.yml` auto-updaters.
