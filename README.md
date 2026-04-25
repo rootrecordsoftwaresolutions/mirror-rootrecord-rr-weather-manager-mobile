@@ -20,7 +20,7 @@ pnpm weather:start
 
 Or from this repository’s root: **`pnpm start`** (delegates to the workspace). From `frontend/`: **`pnpm start`** still works if dependencies are already installed.
 
-Set `REACT_APP_BACKEND_URL` to your API base (no trailing `/api`); the client uses `${REACT_APP_BACKEND_URL}/api` (see `frontend/src/lib/api.js`).
+Set `REACT_APP_BACKEND_URL` to your API base (no trailing `/api`); the client uses `${REACT_APP_BACKEND_URL}/api` (see `frontend/src/lib/api.js`). For Android/production builds use **`frontend/.env.production`** (gitignored). To pull secrets you keep on **`F:\Root Record Operations`**, create **`F:\Root Record Operations\secrets\rr-weather-manager\frontend.env.production`** and **`backend.env`**, then run **`powershell -NoProfile -File frontend\scripts\sync-env-from-operations.ps1`**. **`backend/.env.example`** lists FastAPI variables; copy to **`backend/.env`**.
 
 **Visible installs:** from this repo’s root run **`pnpm run install:frontend:verbose`** — it runs `frontend/scripts/npm-install-with-progress.ps1` (debug-level pnpm log + `pnpm-install.log` next to the workspace `package.json`). **`pnpm run install:frontend`** runs **`pnpm install`** at the workspace root. Commit the workspace **`pnpm-lock.yaml`** (one lockfile for all packages); **`pnpm run ci:frontend`** runs **`pnpm install --frozen-lockfile`** from the workspace root.
 
