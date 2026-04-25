@@ -40,6 +40,12 @@ Native project: **`frontend/android/`** (Capacitor 6). This dev PC uses **JDK 17
 
 Scripts in `frontend/package.json`: `cap:sync`, `android:open`, `android:build`, `android:assemble`.
 
+## Pre-release testing (before Google Play)
+
+The **public** source repo for early access is **[github.com/RootRecord/rootrecord-weather-manager](https://github.com/RootRecord/rootrecord-weather-manager)**. It tracks the same app as the private development remote; use it to clone, inspect, and file issues.
+
+**APK:** we do not ship a store build from this README alone. Testers can either (1) install from **GitHub Releases** when you attach a signed or debug APK there, or (2) build locally: from `frontend/`, run `pnpm run android:assemble` and share `frontend/android/app/build/outputs/apk/debug/RootRecord-Weather.apk` (debug) or the release output after your signing setup. Pre-releases are **not** a replacement for Play Protect / production distribution.
+
 ## Optional: local API
 
 ```bash
