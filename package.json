@@ -7,8 +7,11 @@
     "url": "https://github.com/RootRecord/rr-weather-manager-mobile.git"
   },
   "scripts": {
-    "start": "npm --prefix frontend start",
-    "build": "npm --prefix frontend run build",
-    "test": "npm --prefix frontend test"
+    "start": "pnpm -C \"..\" --filter rrweather-mobile start",
+    "build": "pnpm -C \"..\" --filter rrweather-mobile run build",
+    "test": "pnpm -C \"..\" --filter rrweather-mobile test",
+    "install:frontend": "pnpm -C \"..\" install",
+    "ci:frontend": "pnpm -C \"..\" install --frozen-lockfile",
+    "install:frontend:verbose": "powershell -NoProfile -ExecutionPolicy Bypass -File \"frontend/scripts/npm-install-with-progress.ps1\""
   }
 }
