@@ -2,6 +2,10 @@
   "name": "rr-weather-manager-mobile",
   "private": true,
   "description": "Root Record Weather Manager — mobile client (React) and optional local API (Python).",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RootRecord/rr-weather-manager-mobile.git"
+  },
   "scripts": {
     "start": "npm --prefix frontend start",
     "build": "npm --prefix frontend run build",
