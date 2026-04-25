@@ -46,6 +46,8 @@ The **public** source repo for early access is **[github.com/RootRecord/rootreco
 
 **APK:** we do not ship a store build from this README alone. Testers can either (1) install from **GitHub Releases** when you attach a signed or debug APK there, or (2) build locally: from `frontend/`, run `pnpm run android:assemble` and share `frontend/android/app/build/outputs/apk/debug/RootRecord-Weather.apk` (debug) or the release output after your signing setup. Pre-releases are **not** a replacement for Play Protect / production distribution.
 
+**What changed this build:** from the **repo root** (`rr-weather-manager-mobile/`), run **`pnpm changelog:stamp`** before you tag or publish a pre-release. That appends a timestamped block to **`CHANGELOG.md`** listing commits since the last stamp (tracked in **`.changelog-last-ref`**). Optional one-liner: `CHANGELOG_NOTE="Short human summary" pnpm changelog:stamp`. Then commit `CHANGELOG.md` + `.changelog-last-ref` and paste the new section into the GitHub Release notes if you like.
+
 ## Optional: local API
 
 ```bash

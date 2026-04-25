@@ -7,6 +7,7 @@
     "url": "https://github.com/RootRecord/rr-weather-manager-mobile.git"
   },
   "scripts": {
+    "changelog:stamp": "node scripts/changelog-stamp.mjs",
     "start": "pnpm -C \"..\" --filter rrweather-mobile start",
     "build": "pnpm -C \"..\" --filter rrweather-mobile run build",
     "test": "pnpm -C \"..\" --filter rrweather-mobile test",
