@@ -9,12 +9,42 @@ import sys
 import urllib.error
 import urllib.request
 
+# Cloudflare Browser Integrity Check blocks default Python-urllib User-Agent (HTTP 403, error 1010).
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36 RootRecordBroadcast/1.0"
+)
+
+
+def _read_rr_push_secret_from_backend_env() -> str:
+    root = os.getcwd()
+    path = os.path.join(root, "backend", ".env")
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("RR_PUSH_ADMIN_SECRET="):
+                    v = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    return v
+    except OSError:
+        return ""
+    return ""
+
 
 def main() -> int:
     base = (os.environ.get("RR_API_BASE") or "https://rootrecord-primary.rootrecord.workers.dev/api").rstrip("/")
     key = (os.environ.get("RR_PUSH_ADMIN_KEY") or "").strip()
     if not key:
-        print("Set RR_PUSH_ADMIN_KEY to match RR_PUSH_ADMIN_SECRET on the API server.", file=sys.stderr)
+        key = _read_rr_push_secret_from_backend_env()
+    if not key:
+        print(
+            "Missing admin key: set RR_PUSH_ADMIN_KEY, or add RR_PUSH_ADMIN_SECRET=... to backend\\.env",
+            file=sys.stderr,
+        )
         return 1
 
     title = os.environ.get("TITLE") or (sys.argv[1] if len(sys.argv) > 1 else "Root Record test")
@@ -28,6 +58,9 @@ def main() -> int:
         headers={
             "Content-Type": "application/json; charset=utf-8",
             "X-RR-Push-Admin-Key": key,
+            "User-Agent": _UA,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
         },
         method="POST",
     )
