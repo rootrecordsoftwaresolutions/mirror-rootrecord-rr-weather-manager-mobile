@@ -32,11 +32,11 @@ Set `REACT_APP_BACKEND_URL` to your API base (no trailing `/api`); the client us
 
 ## Android (Capacitor)
 
-The native project lives in **`frontend/android/`** (Capacitor 6). Use **JDK 17** for Gradle (the Android Gradle Plugin used here does not run the Gradle daemon on **JDK 25**). Set **`ANDROID_HOME`** (and optionally **`ANDROID_SDK_ROOT`**) to your Android SDK, e.g. `%LOCALAPPDATA%\Android\Sdk` on Windows.
+Native project: **`frontend/android/`** (Capacitor 6). This dev PC uses **JDK 17** for Gradle via **`%USERPROFILE%\.gradle\gradle.properties`**, **`ANDROID_HOME`** / **`ANDROID_SDK_ROOT`** → `%LOCALAPPDATA%\Android\Sdk`, and **`frontend/android/local.properties`** (`sdk.dir`; gitignored).
 
-**Typical flow (from `frontend/`):** `pnpm run build` → `pnpm exec cap sync android` → open **`android/`** in Android Studio and **Run**, or from `frontend/android/` run **`.\gradlew.bat assembleDebug`** (debug APK under `app/build/outputs/apk/debug/`).
+**Debug APK (CLI):** from **`frontend/`**, run **`pnpm run android:assemble`**. Output: **`frontend/android/app/build/outputs/apk/debug/app-debug.apk`**.
 
-**Gradle JVM:** if your default `java` is newer than Gradle supports (for example **JDK 25**), point Gradle at **JDK 17** with `org.gradle.java.home` in **`%USERPROFILE%\.gradle\gradle.properties`**. **`frontend/android/local.properties`** can set `sdk.dir` for CLI builds (gitignored—Android Studio can create it, or copy from a teammate’s example with your own SDK path).
+**Android Studio:** open **`frontend/android`**, sync Gradle, choose a device or emulator, **Run**. Double-click **`open-weather-android-studio.bat`** in this repo root, or run **`pnpm run android:open`** from **`frontend/`**.
 
 Scripts in `frontend/package.json`: `cap:sync`, `android:open`, `android:build`, `android:assemble`.
 
