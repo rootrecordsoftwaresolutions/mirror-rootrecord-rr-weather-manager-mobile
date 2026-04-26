@@ -1,8 +1,30 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, MapPin, Plus, Trash2, User, Settings as SettingsIcon, Lock, Mail, Globe, ChevronRight } from 'lucide-react';
+import {
+  LogOut,
+  MapPin,
+  Plus,
+  Trash2,
+  User,
+  Settings as SettingsIcon,
+  Lock,
+  Mail,
+  Globe,
+  ChevronRight,
+  ExternalLink,
+  MessageCircle,
+  Send,
+} from 'lucide-react';
 import { api, session } from '../lib/api';
 import { getUnits, setUnits } from '../lib/format';
+
+/** Public RootRecord links (same as rootrecord.info / credentials). */
+const CONTACT = {
+  website: 'https://rootrecord.info/',
+  contact: 'https://rootrecord.info/contact.html',
+  discord: 'https://discord.gg/jBgRdgmsjB',
+  telegram: 'https://t.me/rootrecordsupport',
+};
 
 function Section({ title, children, testId }) {
   return (
@@ -16,6 +38,7 @@ function Section({ title, children, testId }) {
 function Row({ icon: Icon, label, value, onClick, testId, danger }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       data-testid={testId}
       className={`flex items-center gap-3 w-full p-4 border-b border-subtle last:border-0 hover:bg-containerHover active:scale-[.99] text-left ${danger ? 'text-sev-severe' : 'text-white'}`}
@@ -27,6 +50,25 @@ function Row({ icon: Icon, label, value, onClick, testId, danger }) {
       </div>
       {!danger && onClick && <ChevronRight strokeWidth={1.5} className="w-4 h-4 text-neutral-500" />}
     </button>
+  );
+}
+
+function ExternalLinkRow({ icon: Icon, label, hint, href, testId }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid={testId}
+      className="flex items-center gap-3 w-full p-4 border-b border-subtle last:border-0 hover:bg-containerHover active:scale-[.99] text-left text-white no-underline"
+    >
+      {Icon && <Icon strokeWidth={1.5} className="w-4 h-4 shrink-0 opacity-80 text-accent" />}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm">{label}</div>
+        {hint && <div className="text-[10px] font-mono text-neutral-500 mt-0.5 truncate">{hint}</div>}
+      </div>
+      <ExternalLink strokeWidth={1.5} className="w-4 h-4 text-neutral-500 shrink-0" aria-hidden />
+    </a>
   );
 }
 
@@ -70,7 +112,7 @@ export default function Settings({ onSignedOut }) {
       <header className="flex items-center justify-between p-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-xs text-neutral-500 font-mono uppercase tracking-widest">Account · Locations · Preferences</p>
+          <p className="text-xs text-neutral-500 font-mono uppercase tracking-widest">Account · Locations · Preferences · Support</p>
         </div>
         <SettingsIcon strokeWidth={1.5} className="w-5 h-5 text-neutral-500" />
       </header>
@@ -134,7 +176,38 @@ export default function Settings({ onSignedOut }) {
         </div>
       </Section>
 
-      <p className="text-center text-[10px] font-mono text-neutral-600 mt-8">Root Record Weather Manager Mobile · v1.0.0</p>
+      <Section title="Contact & support" testId="settings-contact-section">
+        <ExternalLinkRow
+          icon={Globe}
+          label="Website"
+          hint="rootrecord.info — products, pricing, FAQ"
+          href={CONTACT.website}
+          testId="settings-contact-website"
+        />
+        <ExternalLinkRow
+          icon={Mail}
+          label="Contact"
+          hint="Message the team (contact form)"
+          href={CONTACT.contact}
+          testId="settings-contact-form"
+        />
+        <ExternalLinkRow
+          icon={MessageCircle}
+          label="Discord"
+          hint="Community & support server"
+          href={CONTACT.discord}
+          testId="settings-contact-discord"
+        />
+        <ExternalLinkRow
+          icon={Send}
+          label="Telegram"
+          hint="Public support — @rootrecordsupport"
+          href={CONTACT.telegram}
+          testId="settings-contact-telegram"
+        />
+      </Section>
+
+      <p className="text-center text-[10px] font-mono text-neutral-600 mt-8">Root Record Weather Manager Mobile · v1.0.2</p>
     </div>
   );
 }
