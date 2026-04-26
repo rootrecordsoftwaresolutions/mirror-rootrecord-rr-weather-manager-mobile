@@ -4,6 +4,7 @@ import { ChevronDown, MapPin, RefreshCw, Plus, Wind, Droplets, Gauge, Sun, Alert
 import { api } from '../lib/api';
 import {
   fmtTemp,
+  fmtHourlyGridTemp,
   fmtSpeedKmH,
   fmtMileOrKm,
   severityClass,
@@ -224,7 +225,12 @@ export default function Home() {
   const condition = hourlyNow?.shortForecast || obs?.textDescription || '—';
   const gridHigh = bundle?.forecast?.periods?.find((p) => p.isDaytime)?.temperature;
   const gridLow = bundle?.forecast?.periods?.find((p) => !p.isDaytime)?.temperature;
-  const periodUnit = bundle?.forecast?.periods?.[0]?.temperatureUnit || 'F';
+  const periodUnit = String(bundle?.forecast?.periods?.[0]?.temperatureUnit || 'F')
+    .trim()
+    .toUpperCase() === 'C'
+    ? 'C'
+    : 'F';
+  const hourlyGridUnits = bundle?.forecast?.hourly_grid_units === 'si' ? 'si' : 'us';
   const { high, low } = alignDailyHighLowWithNow(
     gridHigh,
     gridLow,
@@ -276,7 +282,9 @@ export default function Home() {
                 <div>
                   <div className="font-mono text-6xl leading-none tracking-tighter" data-testid="home-current-temp">
                     {tempC === undefined || tempC === null
-                      ? (hourlyNow?.temperature !== undefined ? fmtTemp(hourlyNow.temperature, hourlyNow.temperatureUnit) : '—')
+                      ? (hourlyNow?.temperature !== undefined
+                          ? fmtHourlyGridTemp(hourlyNow, hourlyGridUnits)
+                          : '—')
                       : fmtTemp(tempC, 'C')}
                   </div>
                   <div className="mt-2 text-neutral-300">{condition}</div>
@@ -309,7 +317,9 @@ export default function Home() {
                       <div className="text-[10px] font-mono text-neutral-400 shrink-0">
                         {new Date(p.startTime).toLocaleTimeString([], { hour: 'numeric' })}
                       </div>
-                      <div className="font-mono text-lg mt-1 shrink-0">{fmtTemp(p.temperature, p.temperatureUnit)}</div>
+                      <div className="font-mono text-lg mt-1 shrink-0">
+                        {fmtHourlyGridTemp(p, hourlyGridUnits)}
+                      </div>
                       <div className="mt-2 min-h-[4rem] text-[10px] leading-snug text-neutral-500 line-clamp-4 break-words hyphens-auto">
                         {p.shortForecast}
                       </div>

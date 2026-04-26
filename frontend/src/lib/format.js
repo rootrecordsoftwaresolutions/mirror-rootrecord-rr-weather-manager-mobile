@@ -9,13 +9,44 @@ export function setUnits(u) {
   localStorage.setItem(STORAGE_UNITS_KEY, u === 'metric' ? 'metric' : 'imperial');
 }
 
+function nwsScalarNumber(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === 'object' && raw !== null && 'value' in raw) {
+    const n = Number(raw.value);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Format NWS grid hourly period air temperature for display.
+ * Uses `hourly_grid_units` from the forecast bundle (`us` = Fahrenheit values, `si` = Celsius) when the period omits `temperatureUnit`.
+ */
+export function fmtHourlyGridTemp(period, hourlyGridUnits) {
+  const n = nwsScalarNumber(period?.temperature);
+  if (n === null) return '—';
+  let letter = String(period?.temperatureUnit || '')
+    .trim()
+    .toUpperCase();
+  if (letter !== 'C' && letter !== 'F') {
+    letter = hourlyGridUnits === 'si' ? 'C' : 'F';
+  }
+  return fmtTemp(n, letter);
+}
+
 export function fmtTemp(value, fromUnit) {
-  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  const n = nwsScalarNumber(value);
+  if (n === null) return '—';
   const u = getUnits();
-  let n = Number(value);
-  if (fromUnit === 'C' && u === 'imperial') n = (n * 9) / 5 + 32;
-  if (fromUnit === 'F' && u === 'metric') n = ((n - 32) * 5) / 9;
-  return Math.round(n) + (u === 'imperial' ? '°F' : '°C');
+  const letter = String(fromUnit || '')
+    .trim()
+    .toUpperCase();
+  let x = n;
+  if (letter === 'C' && u === 'imperial') x = (n * 9) / 5 + 32;
+  else if (letter === 'F' && u === 'metric') x = ((n - 32) * 5) / 9;
+  return Math.round(x) + (u === 'imperial' ? '°F' : '°C');
 }
 
 export function fmtSpeedKmH(kmh) {
@@ -103,7 +134,10 @@ export function alignDailyHighLowWithNow(
     Number.isFinite(Number(hourlyTemp))
   ) {
     const t = Number(hourlyTemp);
-    if (hourlyTempUnit === 'C') {
+    const hu = String(hourlyTempUnit)
+      .trim()
+      .toUpperCase();
+    if (hu === 'C') {
       cur = periodUnit === 'C' ? t : (t * 9) / 5 + 32;
     } else {
       cur = periodUnit === 'C' ? ((t - 32) * 5) / 9 : t;

@@ -508,7 +508,9 @@ def _merge_hourly_into_observation(observation: dict, hourly: dict) -> dict:
         except (TypeError, ValueError):
             t = None
         if t is not None:
-            unit = hourly.get("temperatureUnit") or "F"
+            unit = str(hourly.get("temperatureUnit") or "").strip().upper()
+            if unit not in ("F", "C"):
+                unit = "F"
             if unit == "F":
                 t = (t - 32.0) * 5.0 / 9.0
             out["temperature"] = {"unitCode": "wmoUnit:degC", "value": t}
@@ -608,13 +610,14 @@ async def weather_forecast(lat: float = Query(...), lon: float = Query(...)):
         try:
             points = await _nws_fetch(hc, f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}")
         except HTTPException:
-            return {"available": False, "periods": [], "hourly": []}
+            return {"available": False, "periods": [], "hourly": [], "hourly_grid_units": "us"}
         props = (points or {}).get("properties") or {}
         forecast_url = props.get("forecast")
         forecast_hourly_url = props.get("forecastHourly")
 
         periods: list = []
         hourly: list = []
+        hourly_grid_units = "us"
         if forecast_url:
             try:
                 fc = await _nws_fetch(hc, forecast_url)
@@ -624,12 +627,14 @@ async def weather_forecast(lat: float = Query(...), lon: float = Query(...)):
         if forecast_hourly_url:
             try:
                 fh = await _nws_fetch(hc, forecast_hourly_url)
-                hourly = ((fh or {}).get("properties") or {}).get("periods") or []
+                fh_props = (fh or {}).get("properties") or {}
+                hourly = fh_props.get("periods") or []
                 hourly = hourly[:24]
+                hourly_grid_units = str(fh_props.get("units") or "us")
             except Exception as e:  # noqa: BLE001
                 logger.info("hourly forecast failed: %s", e)
 
-    return {"available": True, "periods": periods, "hourly": hourly}
+    return {"available": True, "periods": periods, "hourly": hourly, "hourly_grid_units": hourly_grid_units}
 
 
 @api.get("/weather/alerts")

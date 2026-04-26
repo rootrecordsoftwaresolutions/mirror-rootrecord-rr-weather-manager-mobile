@@ -1,5 +1,7 @@
 # Root Record Weather Manager — mobile development
 
+**Public distribution** (APK, changelog, GitHub Releases, consumer README only — **no source**): [github.com/RootRecord/rootrecord-weather-manager-mobile](https://github.com/RootRecord/rootrecord-weather-manager-mobile). Update that remote only from the sibling folder **`rootrecord-weather-manager-mobile-public`** (minimal public files), never by pushing this repo’s `main`. Ship APKs via **Releases** there.
+
 This tree is for **mobile-oriented** work: the **React** app in `frontend/` (package name `rrweather-mobile`) and the optional **FastAPI** service in `backend/` for local or hosted APIs.
 
 ## Run the mobile UI (web / dev server)
@@ -42,9 +44,9 @@ Scripts in `frontend/package.json`: `cap:sync`, `android:open`, `android:build`,
 
 ## Pre-release testing (before Google Play)
 
-Public repo: **[github.com/RootRecord/rootrecord-weather-manager-mobile](https://github.com/RootRecord/rootrecord-weather-manager-mobile)**.
+Use the **public** repo’s [Releases](https://github.com/RootRecord/rootrecord-weather-manager-mobile/releases) page only.
 
-**GitHub Releases (for testers, not builders):** each pre-release should ship **only** the installable **APK** (or AAB only if you document sideloading), plus the **README** and **CHANGELOG** as the release description or as attached text files—**not** full build trees, Gradle outputs, or “build it yourself” bundles. Source stays in the repo for us; testers install the binary and read what changed.
+**GitHub Releases (for testers, not builders):** each pre-release should ship **only** the installable **APK** (or AAB only if you document sideloading), plus release notes (and optionally attach **README** / **CHANGELOG** text). Do **not** attach full build trees, Gradle outputs, or “build it yourself” bundles. Application source remains in **this private tree** only.
 
 Pre-releases are **not** Play Store distribution. Maintainers: run **`pnpm changelog:stamp`** at the repo root before you cut a release, commit **`CHANGELOG.md`** and **`.changelog-last-ref`**, then paste the new **Build** block into the release notes when publishing.
 
